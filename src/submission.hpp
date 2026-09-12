@@ -40,10 +40,8 @@ void apply_stencil(const Grid& __restrict__ old_grid, Grid& __restrict__ new_gri
   if (cols < 3 || rows < 3) return;
 
   std::size_t aligned_cols = (cols - 2) - ((cols - 2) % 4);
-
   const __m256d factor_outer  = _mm256_set1_pd(0.125f);
   const __m256d factor_inner  = _mm256_set1_pd(0.5f);
-  alignas(32) double scalars[4];
 
   #pragma omp parallel for
   for (std::size_t row=1; row<rows-1; ++row) {
@@ -57,6 +55,7 @@ void apply_stencil(const Grid& __restrict__ old_grid, Grid& __restrict__ new_gri
       mid = _mm256_fmadd_pd(top,    factor_outer, mid);
       mid = _mm256_fmadd_pd(bottom, factor_outer, mid);
 
+      alignas(32) double scalars[4];
       _mm256_store_pd(scalars, mid);
 
       // handle non-contiguous/sparse additions manually
