@@ -11,11 +11,7 @@ private:
   std::vector<double> buffer;
 
 public:
-  Grid(std::size_t rows, std::size_t cols) : rows_(rows), cols_(cols), buffer(rows*cols) {
-    #pragma omp parallel for schedule(static)
-    for (std::size_t i=0; i<rows; ++i)
-      std::memset(buffer.data() + i*cols, 0.0f, cols*sizeof(double));
-  }
+  Grid(std::size_t rows, std::size_t cols) : rows_(rows), cols_(cols), buffer(rows*cols, 0.0f) {}
 
   std::size_t get_rows() const { return rows_; }
   std::size_t get_cols() const { return cols_; }
@@ -29,8 +25,8 @@ public:
 void apply_stencil(const Grid& __restrict__ old_grid, Grid& __restrict__ new_grid) {
   std::size_t rows = old_grid.get_rows(), cols = old_grid.get_cols();
 
-  const double *cells = old_grid.data();
-  double *dst = new_grid.data();
+  const double *__restrict__ cells = old_grid.data();
+  double *__restrict__ dst = new_grid.data();
 
   memcpy(dst, cells, cols * sizeof(double));
   memcpy(dst+(rows-1)*cols, cells+(rows-1)*cols, cols * sizeof(double));
