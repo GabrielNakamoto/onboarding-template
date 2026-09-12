@@ -50,20 +50,16 @@ void apply_stencil(const Grid& __restrict__ old_grid, Grid& __restrict__ new_gri
       __m256d top     = _mm256_loadu_pd(cells + ((row-1)  * cols) + col);
       __m256d bottom  = _mm256_loadu_pd(cells + ((row+1)  * cols) + col);
       __m256d mid     = _mm256_loadu_pd(cells + (row      * cols) + col);
+      __m256d left    = _mm256_loadu_pd(cells + (row      * cols) + col - 1);
+      __m256d right   = _mm256_loadu_pd(cells + (row      * cols) + col + 1);
 
       mid = _mm256_mul_pd(mid, factor_inner);
       mid = _mm256_fmadd_pd(top,    factor_outer, mid);
       mid = _mm256_fmadd_pd(bottom, factor_outer, mid);
+      mid = _mm256_fmadd_pd(left,   factor_outer, mid);
+      mid = _mm256_fmadd_pd(right,  factor_outer, mid);
 
-      alignas(32) double scalars[4];
-      _mm256_store_pd(scalars, mid);
-
-      // handle non-contiguous/sparse additions manually
-      const double *tile_row = cells + (row*cols) + col-1;
-      for (std::size_t k=0; k<4; ++k)
-        scalars[k] += (tile_row[k] + tile_row[k+2]) * 0.125f;
-
-      memcpy(dst + (row*cols) + col, scalars, 4 * sizeof(double));
+      _mm256_storeu_pd(dst + row*cols + col, mid);
     }
   }
 
