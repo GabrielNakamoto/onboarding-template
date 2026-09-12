@@ -31,28 +31,32 @@ void apply_stencil(const Grid& __restrict__ old_grid, Grid& __restrict__ new_gri
   memcpy(dst, cells, cols * sizeof(double));
   memcpy(dst+(rows-1)*cols, cells+(rows-1)*cols, cols * sizeof(double));
 
-  #pragma onp parallel for
+  #pragma omp parallel for
   for (std::size_t i=0; i<rows; ++i) {
-    new_grid(i,0) = old_grid(i,0);
-    new_grid(i,cols-1) = old_grid(i,cols-1);
+    new_grid(i,0)       = old_grid(i,0);
+    new_grid(i,cols-1)  = old_grid(i,cols-1);
   }
 
+  if (cols < 3 || rows < 3) return;
+
   std::size_t aligned_cols = (cols - 2) - ((cols - 2) % 4);
+
+  const __m256d factor_outer  = _mm256_set1_pd(0.125f);
+  const __m256d factor_inner  = _mm256_set1_pd(0.5f);
+  alignas(32) double scalars[4];
+
   #pragma omp parallel for
   for (std::size_t row=1; row<rows-1; ++row) {
-    for (std::size_t col=1; col < aligned_cols; col+=4) {
+    for (std::size_t col=1; col<aligned_cols; col+=4) {
       // vectorize patches of 4 (64x4=256 ymm) inner fmas
       __m256d top     = _mm256_loadu_pd(cells + ((row-1)  * cols) + col);
       __m256d bottom  = _mm256_loadu_pd(cells + ((row+1)  * cols) + col);
       __m256d mid     = _mm256_loadu_pd(cells + (row      * cols) + col);
-      const __m256d factor_outer  = _mm256_set1_pd(0.125f);
-      const __m256d factor_inner  = _mm256_set1_pd(0.5f);
 
       mid = _mm256_mul_pd(mid, factor_inner);
       mid = _mm256_fmadd_pd(top,    factor_outer, mid);
       mid = _mm256_fmadd_pd(bottom, factor_outer, mid);
 
-      alignas(32) double scalars[4];
       _mm256_store_pd(scalars, mid);
 
       // handle non-contiguous/sparse additions manually
