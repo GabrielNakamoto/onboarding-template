@@ -11,7 +11,11 @@ private:
   std::vector<double> buffer;
 
 public:
-  Grid(std::size_t rows, std::size_t cols) : rows_(rows), cols_(cols), buffer(rows*cols,0.0f) {}
+  Grid(std::size_t rows, std::size_t cols) : rows_(rows), cols_(cols), buffer(rows*cols) {
+    #pragma omp parallel for schedule(static)
+    for (std::size_t i=0; i<rows; ++i)
+      std::memset(buffer.data() + i*cols, 0.0f, cols*sizeof(double));
+  }
 
   std::size_t get_rows() const { return rows_; }
   std::size_t get_cols() const { return cols_; }
