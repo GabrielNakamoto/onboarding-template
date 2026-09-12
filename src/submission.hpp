@@ -45,19 +45,22 @@ void apply_stencil(const Grid& __restrict__ old_grid, Grid& __restrict__ new_gri
     new_grid(row,0)       = old_grid(row,0);
     new_grid(row,cols-1)  = old_grid(row,cols-1);
     for (std::size_t col=1; col<aligned_cols; col+=4) {
-      // vectorize patches of 4 (64x4=256 ymm) inner fmas
+      // vectorize patches of 4 to reduce across 256bit ymm axis
       __m256d top     = _mm256_loadu_pd(cells + ((row-1)  * cols) + col);
       __m256d bottom  = _mm256_loadu_pd(cells + ((row+1)  * cols) + col);
       __m256d mid     = _mm256_loadu_pd(cells + (row      * cols) + col);
       __m256d left    = _mm256_loadu_pd(cells + (row      * cols) + col - 1);
       __m256d right   = _mm256_loadu_pd(cells + (row      * cols) + col + 1);
 
-      mid = _mm256_mul_pd(mid, factor_inner);
-      mid = _mm256_fmadd_pd(top,    factor_outer, mid);
-      mid = _mm256_fmadd_pd(bottom, factor_outer, mid);
-      mid = _mm256_fmadd_pd(left,   factor_outer, mid);
-      mid = _mm256_fmadd_pd(right,  factor_outer, mid);
+      // individual muls instead of fmad to avoid dependency chain of acc
+      mid     = _mm256_mul_pd(mid, factor_inner);
+      top     = _mm256_mul_pd(top, factor_outer);
+      bottom  = _mm256_mul_pd(bottom, factor_outer);
+      left    = _mm256_mul_pd(left, factor_outer);
+      right   = _mm256_mul_pd(right, factor_outer);
 
+      // reduce together at end
+      mid = _mm256_add_pd(top, _mm256_add_pd(bottom, _mm256_add_pd(left, _mm256_add_pd(right, mid))));
       _mm256_storeu_pd(dst + row*cols + col, mid);
     }
   }
