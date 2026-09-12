@@ -2,12 +2,8 @@
 #include <immintrin.h>
 #include <cstddef>
 #include <vector>
+#include <cstring>
 
-// Starter Grid for the 2D heat-diffusion problem.
-//
-// The evaluation harness uses operator() to set initial conditions and to read
-// results; it never touches your internal storage. Keep this interface,
-// everything else is yours.
 class Grid {
 private:
   std::size_t rows_;
@@ -40,14 +36,16 @@ void apply_stencil(const Grid& __restrict__ old_grid, Grid& __restrict__ new_gri
     new_grid(i,cols-1) = old_grid(i,cols-1);
   }
 
+  std::size_t aligned_cols = (cols - 2) - ((cols - 2) % 4);
+  #pragma omp parallel for
   for (std::size_t row=1; row<rows-1; ++row) {
-    for (std::size_t col=1; col<cols-1; col+=4) {
-      // start by just vectorizing top/bottom
-      __m256d top     = _mm256_load_pd(cells + (row-1)  * cols + col);
-      __m256d bottom  = _mm256_load_pd(cells + (row+1)  * cols + col);
-      __m256d mid     = _mm256_load_pd(cells + row      * cols + col);
-      __m256d factor_outer  = _mm256_set1_pd(0.126);
-      __m256d factor_inner  = _mm256_set1_pd(0.5);
+    for (std::size_t col=1; col < aligned_cols; col+=4) {
+      // vectorize patches of 4 (64x4=256 ymm) inner fmas
+      __m256d top     = _mm256_loadu_pd(cells + ((row-1)  * cols) + col);
+      __m256d bottom  = _mm256_loadu_pd(cells + ((row+1)  * cols) + col);
+      __m256d mid     = _mm256_loadu_pd(cells + (row      * cols) + col);
+      const __m256d factor_outer  = _mm256_set1_pd(0.125f);
+      const __m256d factor_inner  = _mm256_set1_pd(0.5f);
 
       mid = _mm256_mul_pd(mid, factor_inner);
       mid = _mm256_fmadd_pd(top,    factor_outer, mid);
@@ -56,12 +54,23 @@ void apply_stencil(const Grid& __restrict__ old_grid, Grid& __restrict__ new_gri
       alignas(32) double scalars[4];
       _mm256_store_pd(scalars, mid);
 
+      // handle non-contiguous/sparse additions manually
+      const double *tile_row = cells + (row*cols) + col-1;
+      for (std::size_t k=0; k<4; ++k)
+        scalars[k] += (tile_row[k] + tile_row[k+2]) * 0.125f;
 
-      const double *tile_row = cells + row*cols + col-1;
-      for (std::size_t k=1; k<5; ++k)
-        scalars[k] += (tile_row[k-1] + tile_row[k+1]) * 0.125f;
+      memcpy(dst + (row*cols) + col, scalars, 4 * sizeof(double));
+    }
+  }
 
-      memcpy(dst + row*cols + col, scalars, 4 * sizeof(double));
+  // handle misalignment
+  if ((cols - 2) % 4 > 0) {
+    for (std::size_t row=1; row<rows-1; ++row) {
+      for (std::size_t col=aligned_cols; col < cols-1; ++col) {
+        dst[row*cols + col] = (0.5 * cells[row*cols + col]) + 
+                      0.125 * (cells[(row-1)*cols + col] + cells[(row+1)*cols + col]
+                              +cells[row*cols + (col-1)] + cells[row*cols + (col+1)]);
+      }
     }
   }
 }
