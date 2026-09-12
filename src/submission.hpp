@@ -31,6 +31,7 @@ void apply_stencil(const Grid& __restrict__ old_grid, Grid& __restrict__ new_gri
   memcpy(dst, cells, cols * sizeof(double));
   memcpy(dst+(rows-1)*cols, cells+(rows-1)*cols, cols * sizeof(double));
 
+  #pragma onp parallel for
   for (std::size_t i=0; i<rows; ++i) {
     new_grid(i,0) = old_grid(i,0);
     new_grid(i,cols-1) = old_grid(i,cols-1);
@@ -66,7 +67,7 @@ void apply_stencil(const Grid& __restrict__ old_grid, Grid& __restrict__ new_gri
   // handle misalignment
   if ((cols - 2) % 4 > 0) {
     for (std::size_t row=1; row<rows-1; ++row) {
-      for (std::size_t col=aligned_cols; col < cols-1; ++col) {
+      for (std::size_t col=std::max(aligned_cols, (std::size_t)1); col < cols-1; ++col) {
         dst[row*cols + col] = (0.5 * cells[row*cols + col]) + 
                       0.125 * (cells[(row-1)*cols + col] + cells[(row+1)*cols + col]
                               +cells[row*cols + (col-1)] + cells[row*cols + (col+1)]);
