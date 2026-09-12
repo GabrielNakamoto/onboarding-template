@@ -11,7 +11,13 @@ private:
   std::vector<double> buffer;
 
 public:
-  Grid(std::size_t rows, std::size_t cols) : rows_(rows), cols_(cols), buffer(rows*cols, 0.0f) {}
+  // TODO: store quantized data and expose precision restoration interface to test harness
+  Grid(std::size_t rows, std::size_t cols) : rows_(rows), cols_(cols), buffer(rows*cols, 0.0f) {
+    #pragma omp parallel
+    {
+      // warmup threads
+    }
+  }
 
   std::size_t get_rows() const { return rows_; }
   std::size_t get_cols() const { return cols_; }
@@ -39,6 +45,9 @@ void apply_stencil(const Grid& __restrict__ old_grid, Grid& __restrict__ new_gri
   std::size_t aligned_cols = (cols - 2) - ((cols - 2) % 4);
   const __m256d factor_outer  = _mm256_set1_pd(0.125f);
   const __m256d factor_inner  = _mm256_set1_pd(0.5f);
+
+  // Block Floating Point (BFP) https://en.wikipedia.org/wiki/Block_floating_point
+  // store values with block shared exponents and 32 bit mantissas individually
 
   #pragma omp parallel for schedule(static)
   for (std::size_t row=1; row<rows-1; ++row) {
