@@ -48,12 +48,11 @@ static inline __m256d kernel(__m256d top, __m256d bottom, __m256d mid, __m256d l
   return _mm256_fmadd_pd(right, _mm256_set1_pd(0.125f), mid);
 }
 
-void apply_stencil(const Grid& __restrict__ old_grid, Grid& __restrict__ new_grid) {
-  const std::size_t rows = old_grid.get_rows(), cols = old_grid.get_cols();
+static inline double c_kernel(const double *in, std::size_t r, std::size_t c, std::size_t stride) {
+  return 0.5f*in[r*stride+c] + 0.125f * (in[(r+1)*stride+c] + in[(r-1)*stride+c] + in[r*stride+c+1] + in[r*stride+c-1]);
+}
 
-  const double *__restrict__ cells = old_grid.data();
-  double *__restrict__ dst = new_grid.data();
-
+static void stencil_impl(const std::size_t rows, const std::size_t cols, const double *__restrict__ cells, double *__restrict__ dst) {
   auto row_pair = [=](std::size_t row) {
     const double *r0 = cells + (row-1)*cols, *r1 = r0 + cols, *r2 = r1 + cols, *r3 = r2 + cols;
     double *d1 = dst + row*cols, *d2 = d1 + cols;
@@ -85,13 +84,17 @@ void apply_stencil(const Grid& __restrict__ old_grid, Grid& __restrict__ new_gri
     if (interior & 1) {
       if (rows >= 4) row_pair(rows - 3);
       else for (std::size_t col=1; col<cols-1; ++col)
-        dst[cols+col] = 0.5*cells[cols+col] + 0.125*(cells[col] + cells[2*cols+col] + cells[cols+col-1] + cells[cols+col+1]);
+        dst[cols+col] = c_kernel(cells, 1, col, cols);
     }
   } else if (rows >= 3 && cols >= 3) {
     for (std::size_t row=1; row<rows-1; ++row) for (std::size_t col=1; col<cols-1; ++col)
-      dst[row*cols+col] = 0.5*cells[row*cols+col] + 0.125*(cells[(row-1)*cols+col] + cells[(row+1)*cols+col] + cells[row*cols+col-1] + cells[row*cols+col+1]);
+      dst[row*cols+col] = c_kernel(cells, row, col, cols);
   }
 
   memcpy(dst, cells, cols * sizeof(double));
   memcpy(dst+(rows-1)*cols, cells+(rows-1)*cols, cols * sizeof(double));
+}
+
+void apply_stencil(const Grid& __restrict__ old_grid, Grid& __restrict__ new_grid) {
+  return stencil_impl(new_grid.get_rows(), new_grid.get_cols(), old_grid.data(), new_grid.data());
 }
