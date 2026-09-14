@@ -60,12 +60,13 @@ static inline double c_kernel(const double *in, std::size_t r, std::size_t c, st
   return 0.5f*in[r*stride+c] + 0.125f * (in[(r+1)*stride+c] + in[(r-1)*stride+c] + in[r*stride+c+1] + in[r*stride+c-1]);
 }
 
-template <std::size_t OMP_CHUNK>
 static void stencil_impl(const View<double> old_buffer, View<double> new_buffer) {
+  const double *__restrict__ old_data = old_buffer.get();
+  double *__restrict__ new_data = new_buffer.get();
   const std::size_t cols = new_buffer.m_cols, rows = new_buffer.m_rows;
   auto row_pair = [=](std::size_t row) {
-    const double *r0 = old_buffer.get() + (row-1)*cols, *r1 = r0 + cols, *r2 = r1 + cols, *r3 = r2 + cols;
-    double *d1 = (double*)new_buffer.get() + row*cols, *d2 = d1 + cols;
+    const double *r0 = old_data + (row-1)*cols, *r1 = r0 + cols, *r2 = r1 + cols, *r3 = r2 + cols;
+    double *d1 = new_data + row*cols, *d2 = d1 + cols;
     auto block = [=](std::size_t col) {
       // batch kernel applications by 2x4 elements, reduces number of loads by sharing top/bottom between rows
       // and vectorize 4 cols at a time with AVX2 intrinsics
@@ -88,7 +89,7 @@ static void stencil_impl(const View<double> old_buffer, View<double> new_buffer)
   if (rows >= 3 && cols >= 5) {
     const std::size_t interior = rows - 2, pairs = interior / 2;
 
-    #pragma omp parallel for schedule(static,OMP_CHUNK)
+    #pragma omp parallel for schedule(static)
     for (std::size_t p=0; p<pairs; ++p) row_pair(1 + 2*p);
 
     if (interior & 1) {
@@ -106,5 +107,5 @@ static void stencil_impl(const View<double> old_buffer, View<double> new_buffer)
 }
 
 void apply_stencil(const Grid& __restrict__ old_grid, Grid& __restrict__ new_grid) {
-  return stencil_impl<4>(old_grid.view(), new_grid.view());
+  return stencil_impl(old_grid.view(), new_grid.view());
 }
